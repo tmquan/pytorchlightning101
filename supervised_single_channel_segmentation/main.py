@@ -282,7 +282,7 @@ class CustomLightningModel(pl.LightningModule):
         return self.net(x)
 
     def loss(self, estim, label):
-        loss = torch.nn.functional.mse_loss(estim, label, reduce=True)
+        loss = torch.nn.functional.mse_loss(estim, label, reduction='mean')
         return loss
 
     def training_step(self, batch, batch_idx):
@@ -311,7 +311,7 @@ class CustomLightningModel(pl.LightningModule):
         input, label = input / 255.0, label / 255.0
         estim = self.net(input)
         loss = self.loss(estim, label)
-        self.log('val_loss', loss, on_step=True, on_epoch=True, prog_bar=True, logger=True, enable_graph=True)
+        # self.log('val_loss', loss, on_step=True, on_epoch=True, prog_bar=True, logger=True, enable_graph=True)
 
         # Visualization
         if batch_idx==0:
@@ -325,7 +325,9 @@ class CustomLightningModel(pl.LightningModule):
     #     return outputs
 
     def validation_epoch_end(self, outputs) -> None:
-        torch.stack([x['val_loss'] for x in outputs]).mean()
+        mean_val_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
+        self.log('val_loss', mean_val_loss, on_epoch=True, prog_bar=True, logger=True, enable_graph=True)
+
 
     def test_step(self, batch, batch_idx):
         input, label = batch
@@ -358,7 +360,7 @@ def main(args: Namespace) -> None:
         # DistributedDataParallel, we need to divide the batch size
         # ourselves based on the total number of GPUs we have
         args.batch_size = int(args.batch_size / max(1, args.gpus))
-        args.workers = int(args.workers / max(1, args.gpus))
+        args.num_workers = int(args.num_workers / max(1, args.gpus))
 
     model = CustomLightningModel(args) #CustomLightningModel(**vars(args))
     dm = CustomDataModule(args)
@@ -380,9 +382,9 @@ def main(args: Namespace) -> None:
 def run_cli():
     parser = ArgumentParser()
     parser.add_argument("--data_path", type=str, help="path where dataset is stored")
-    parser.add_argument("--gpus", type=str, default='0,1', help="number of available GPUs")
+    parser.add_argument("--gpus", default=-1, help="number of available GPUs")
     parser.add_argument("--load", action='store_true')
-    parser.add_argument('--distributed-backend', type=str, default='dp', choices=('dp', 'ddp', 'ddp2'), help='supports three options dp, ddp, ddp2')
+    parser.add_argument('--distributed_backend', type=str, default='dp', choices=('dp', 'ddp', 'ddp2'), help='supports three options dp, ddp, ddp2')
     parser.add_argument('--use_amp', action='store_true', help='if true uses 16 bit precision')
     parser.add_argument("--batch_size", type=int, default=8, help="size of the batches")
     parser.add_argument("--lr", type=float, default=0.001, help="adam: learning rate")
