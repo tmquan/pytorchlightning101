@@ -45,10 +45,10 @@ class CustomDataModule(pl.LightningDataModule):
     def train_dataloader(self):
         train_tfm = AB.Compose([
             AB.ImageCompression(quality_lower=98, quality_upper=100, p=1.0), 
-            AB.Rotate(limit=20, border_mode=cv2.BORDER_CONSTANT, p=1.0),
+            # AB.Rotate(limit=20, border_mode=cv2.BORDER_CONSTANT, p=1.0),
             # AB.Resize(height=self.arg.shape, width=self.arg.shape, p=1.0), 
             # AB.CropNonEmptyMaskIfExists(height=480, width=480, p=0.8), 
-            AB.RandomScale(scale_limit=(0.8, 1.2), p=0.5),
+            # AB.RandomScale(scale_limit=(0.8, 1.2), p=0.5),
             AB.Equalize(p=0.5),
             # AB.CLAHE(p=0.5),
             AB.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.5),
@@ -275,7 +275,7 @@ class CustomLightningModel(pl.LightningModule):
         discriminator = xrv.models.DenseNet(weights="all")
         discriminator.classifier = nn.Sequential(
                 nn.Linear(in_features=1024, out_features=1, bias=True),
-                nn.Sigmoid()
+                # nn.Sigmoid()
         )
         return discriminator
 
@@ -288,14 +288,15 @@ class CustomLightningModel(pl.LightningModule):
         classifier = xrv.models.DenseNet(weights="all")
         classifier.classifier = nn.Sequential(
                 nn.Linear(in_features=1024, out_features=1, bias=True),
-                nn.Sigmoid()
+                # nn.Sigmoid()
         )
         return classifier
 
     def generator_loss(self, p_fake):
-        y = torch.ones(p_fake.size(0), 1, device=self.device)
+        b = p_fake.size(0)
+        y = torch.ones(b, 1, device=self.device)
         # ground truth result (ie: all real)
-        g_loss = F.binary_cross_entropy(p_fake, y)
+        g_loss = F.binary_cross_entropy_with_logits(p_fake, y)
         return g_loss
 
 
@@ -303,10 +304,11 @@ class CustomLightningModel(pl.LightningModule):
         # train discriminator on real
         b = p_real.size(0)
         y_real = torch.ones(b, 1, device=self.device)
-        d_real_loss = F.binary_cross_entropy(p_real, y_real)
+        d_real_loss = F.binary_cross_entropy_with_logits(p_real, y_real)
 
+        b = p_fake.size(0)
         y_fake = torch.zeros(b, 1, device=self.device)
-        d_fake_loss = F.binary_cross_entropy(p_fake, y_fake)
+        d_fake_loss = F.binary_cross_entropy_with_logits(p_fake, y_fake)
 
         # gradient backprop & optimize ONLY D's parameters
         d_loss = d_real_loss + d_fake_loss
@@ -314,7 +316,7 @@ class CustomLightningModel(pl.LightningModule):
 
     def classifier_loss(self, estim, label):
         # estim = self.classifier(image)
-        c_loss = F.binary_cross_entropy(estim, label)
+        c_loss = F.binary_cross_entropy_with_logits(estim, label)
         return c_loss
 
     def training_step(self, batch, batch_idx, optimizer_idx):
@@ -373,7 +375,7 @@ class CustomLightningModel(pl.LightningModule):
             return d_loss
 
         elif optimizer_idx==1: #g
-            return g_loss + 1e2*r_loss + c_loss
+            return g_loss + 1e1*r_loss + 1e1*c_loss
 
         elif optimizer_idx==2: #c
             return c_loss 
@@ -411,6 +413,9 @@ class CustomLightningModel(pl.LightningModule):
         np_estim = torch.cat([x[f'{prefix}_estim'].squeeze_(0) for x in outputs], axis=0).to('cpu').numpy()
         np_label = torch.cat([x[f'{prefix}_label'].squeeze_(0) for x in outputs], axis=0).to('cpu').numpy()
 
+        sigmoid = True
+        if sigmoid: 
+            np_estim = 1/(1 + np.exp(-np_estim))
         # Casting to binary
         np_estim = 1.0 * (np_estim >= self.arg.threshold).astype(np.float32)
         np_label = 1.0 * (np_label >= self.arg.threshold).astype(np.float32)
@@ -458,6 +463,9 @@ class CustomLightningModel(pl.LightningModule):
         np_estim = torch.cat([x[f'{prefix}_estim'].squeeze_(0) for x in outputs], axis=0).to('cpu').numpy()
         np_label = torch.cat([x[f'{prefix}_label'].squeeze_(0) for x in outputs], axis=0).to('cpu').numpy()
 
+        sigmoid = True
+        if sigmoid: 
+            np_estim = 1/(1 + np.exp(-np_estim))
         # Casting to binary
         np_estim = 1.0 * (np_estim >= self.arg.threshold).astype(np.float32)
         np_label = 1.0 * (np_label >= self.arg.threshold).astype(np.float32)
@@ -546,7 +554,7 @@ def run_cli():
     parser.add_argument("--load", action='store_true')
     parser.add_argument('--distributed_backend', type=str, default='dp', choices=('dp', 'ddp', 'ddp2'), help='supports three options dp, ddp, ddp2')
     parser.add_argument('--use_amp', action='store_true', help='if true uses 16 bit precision')
-    parser.add_argument("--batch_size", type=int, default=2, help="size of the batches")
+    parser.add_argument("--batch_size", type=int, default=8, help="size of the batches")
     parser.add_argument("--lr", type=float, default=2e-3, help="adam: learning rate")
     parser.add_argument("--num_workers", type=int, default=16, help="size of the workers")
     parser.add_argument("--grad_batches", type=int, default=1, help="number of batches to accumulate")
