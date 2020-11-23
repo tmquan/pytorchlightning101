@@ -37,8 +37,9 @@ class CustomDataset(Dataset):
         self.csv = pd.read_csv(self.csvpath)
 
         # Get our classes.
-        self.positives = self.csv[self.csv[self.pathology] >=0.5] 
-        self.negatives = self.csv[self.csv[self.pathology] < 0.5]
+        self.positives = self.csv.copy(deep=True)[self.csv[self.pathology] >=0.5].reset_index() 
+        self.negatives = self.csv.copy(deep=True)[self.csv[self.pathology] < 0.5].reset_index()
+        
         print(len(self.positives))
         print(len(self.negatives))
         
@@ -51,20 +52,35 @@ class CustomDataset(Dataset):
     def __getitem__(self, idx):
         if self.is_train:
             pos_idx = np.random.randint(len(self.positives))
-            pos_id = self.csv['Images'].iloc[pos_idx]
+            pos_id = self.positives['Images'].iloc[pos_idx]
             pos_image_path = os.path.join(self.imgpath, pos_id)
             pos_image = cv2.imread(pos_image_path, cv2.IMREAD_GRAYSCALE)
 
             neg_idx = np.random.randint(len(self.negatives))        
-            neg_id = self.csv['Images'].iloc[neg_idx]
+            neg_id = self.negatives['Images'].iloc[neg_idx]
             neg_image_path = os.path.join(self.imgpath, neg_id)
             neg_image = cv2.imread(neg_image_path, cv2.IMREAD_GRAYSCALE)
 
+            if pos_image is None:
+                print(pos_image_path)
+            if neg_image is None:
+                print(neg_image_path)
+            def bbox2(img):
+                #print(img.shape)
+                rows = np.any(img, axis=1)
+                cols = np.any(img, axis=0)
+                ymin, ymax = np.where(rows)[0][[0, -1]]
+                xmin, xmax = np.where(cols)[0][[0, -1]]
+                return img[ymin:ymax+1, xmin:xmax+1]
+                
+            pos_image = bbox2(pos_image)
+            neg_image = bbox2(neg_image) # Crop to valid part
             if self.transform is not None:
                 pos_transformed = self.transform(image=pos_image)
                 pos_image = pos_transformed['image']
                 neg_transformed = self.transform(image=neg_image)
                 neg_image = neg_transformed['image']
+
 
             return kornia.image_to_tensor(pos_image).float(), \
                    torch.Tensor([self.positives[self.pathology].iloc[pos_idx]]).float(), \
@@ -75,6 +91,7 @@ class CustomDataset(Dataset):
             ord_id = self.csv['Images'].iloc[ord_idx]
             ord_image_path = os.path.join(self.imgpath, ord_id)
             ord_image = cv2.imread(ord_image_path, cv2.IMREAD_GRAYSCALE)
+            # print(ord_image_path)
             if self.transform is not None:
                 ord_transformed = self.transform(image=ord_image)
                 ord_image = ord_transformed['image']
@@ -87,7 +104,7 @@ class CustomDataset(Dataset):
 
 
 if __name__ == '__main__':
-    ds = CustomDataset(imgpath='/u01/data/COVID_Data_Relabel/data/',
+    ds = CustomDataset(imgpath='/raid/data/COVID_Data_Relabel/data/',
                        csvpath='train_covid_quan.csv',
                        is_train='valid'
                        )
@@ -101,7 +118,7 @@ if __name__ == '__main__':
               # sample[3], 
               )
 
-    # ds = CustomDataset(imgpath='/u01/data/COVID_Data_Relabel/data/',
+    # ds = CustomDataset(imgpath='/raid/data/COVID_Data_Relabel/data/',
     #                    csvpath='valid_covid_quan.csv',
     #                    is_train='test'
     #                    )

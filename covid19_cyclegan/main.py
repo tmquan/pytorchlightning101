@@ -262,7 +262,8 @@ class CustomLightningModel(pl.LightningModule):
 
     def configure_optimizers(self):
         d_optim = torch.optim.Adam(self.discriminator.parameters(), lr=self.arg.lr)
-        g_optim = torch.optim.Adam(self.generator.parameters(), lr=self.arg.lr)
+        g_optim = torch.optim.Adam([model.parameters() for model in list(self.generatorAB, self.generatorBA)],
+                                   lr=self.arg.lr)
         c_optim = torch.optim.Adam(self.classifier.parameters(), lr=self.arg.lr)
 
         d_sched = torch.optim.lr_scheduler.CosineAnnealingLR(d_optim, T_max=10)
@@ -272,7 +273,7 @@ class CustomLightningModel(pl.LightningModule):
         return [d_optim, g_optim, c_optim], [d_sched, g_sched, c_sched]
 
     def init_discriminator(self):
-        discriminator = xrv.models.DenseNet(weights="all")
+        discriminator = xrv.models.DenseNet(weights='all')
         discriminator.classifier = nn.Sequential(
                 nn.Linear(in_features=1024, out_features=1, bias=True),
                 # nn.Sigmoid()
@@ -285,7 +286,7 @@ class CustomLightningModel(pl.LightningModule):
         return generatorAB, generatorBA
 
     def init_classifier(self):
-        classifier = xrv.models.DenseNet(weights="all")
+        classifier = xrv.models.DenseNet(weights='all')
         classifier.classifier = nn.Sequential(
                 nn.Linear(in_features=1024, out_features=1, bias=True),
                 # nn.Sigmoid()
@@ -375,7 +376,7 @@ class CustomLightningModel(pl.LightningModule):
             return d_loss
 
         elif optimizer_idx==1: #g
-            return g_loss + 1e1*r_loss + 1e1*c_loss
+            return g_loss + 1e2*r_loss
 
         elif optimizer_idx==2: #c
             return c_loss 
@@ -482,10 +483,12 @@ class CustomLightningModel(pl.LightningModule):
 
 
     def configure_optimizers(self):
-        d_optim = torch.optim.Adam(self.discriminator.parameters(), lr=self.arg.lr)
+        d_optim = torch.optim.Adam(self.discriminator.parameters(), 
+                                   lr=1e-4)
         g_optim = torch.optim.Adam((params for model in [self.generatorAB, self.generatorBA] for params in model.parameters()),
-                                    lr=self.arg.lr)
-        c_optim = torch.optim.Adam(self.classifier.parameters(), lr=self.arg.lr)
+                                    lr=2e-4)
+        c_optim = torch.optim.Adam(self.classifier.parameters(), 
+                                   lr=1e-4)
 
         d_sched = torch.optim.lr_scheduler.CosineAnnealingLR(d_optim, T_max=10)
         g_sched = torch.optim.lr_scheduler.CosineAnnealingLR(g_optim, T_max=10)
@@ -554,8 +557,8 @@ def run_cli():
     parser.add_argument("--load", action='store_true')
     parser.add_argument('--distributed_backend', type=str, default='dp', choices=('dp', 'ddp', 'ddp2'), help='supports three options dp, ddp, ddp2')
     parser.add_argument('--use_amp', action='store_true', help='if true uses 16 bit precision')
-    parser.add_argument("--batch_size", type=int, default=8, help="size of the batches")
-    parser.add_argument("--lr", type=float, default=2e-3, help="adam: learning rate")
+    parser.add_argument("--batch_size", type=int, default=4, help="size of the batches")
+    parser.add_argument("--lr", type=float, default=1e-4, help="adam: learning rate")
     parser.add_argument("--num_workers", type=int, default=16, help="size of the workers")
     parser.add_argument("--grad_batches", type=int, default=1, help="number of batches to accumulate")
     parser.add_argument("--epochs", type=int, default=20, help="number of epochs to train")
@@ -568,7 +571,7 @@ def run_cli():
     parser.set_defaults(
         profiler=True,
         deterministic=True,
-        max_epochs=501,
+        max_epochs=301,
     )
     args = parser.parse_args()
     main(args)
